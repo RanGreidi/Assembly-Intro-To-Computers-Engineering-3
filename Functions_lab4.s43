@@ -1,0 +1,87 @@
+#include  <msp430xG46x.h>
+
+                MODULE    Function
+                PUBLIC    BinCounter,IncLEDtilldone,IncLEDfiveCyc
+                EXTERN    Delay500us, Delayhalfsec,state
+                RSEG      CODE
+                
+;=====================================================================            
+   
+IncLEDtilldone mov  #5,R15
+MAINLOOP3   cmp    #0,R15
+            jz     end6
+            mov    #1,&PBOUT
+subloop3    call   #Delayhalfsec
+            cmp.b  #2,state
+            jnz    end5
+            rla    &PBOUT
+            add    #1,&PBOUT
+            cmp    #0xffff,&PBOUT
+            jz     new_loop2
+            jmp    subloop3
+new_loop2   dec    R15
+            call   #Delayhalfsec
+            jmp    MAINLOOP3
+end5        ret
+end6        bis.w   #CPUOFF+GIE,SR
+            ret        
+;=====================================================================  
+BinCounter  mov   &PBOUT,R15
+            add   #20,R15
+subloop1    call  #Delayhalfsec
+            CMP   #0,state
+            JNZ   end1
+            cmp   &PBOUT,R15
+            JZ    end2
+            cmp   #0xffff,&PBOUT
+            JZ    starting
+            inc   &PBOUT
+            JMP   subloop1
+starting    clr   &PBOUT
+            jmp   subloop1
+end1        ret
+end2        bis.w   #CPUOFF+GIE,SR
+            ret
+
+;=======================================================================
+
+IncLEDfiveCyc mov  #5,R15
+MAINLOOP2   cmp    #0,R15
+            jz     end4
+            mov    #1,&PBOUT
+subloop2    call   #Delayhalfsec
+            cmp.b  #1,state
+            jnz    end3
+            rla    &PBOUT
+            cmp    #0x8000,&PBOUT
+            jz     new_loop
+            jmp    subloop2
+new_loop    dec    R15
+            call   #Delayhalfsec
+            jmp    MAINLOOP2
+end3        ret
+end4        bis.w   #CPUOFF+GIE,SR
+            ret
+                            
+;=======================================================================
+                ENDMOD 
+//============================================================== 
+//==============================================================
+                MODULE  Delay
+                PUBLIC  Delay500us, Delayhalfsec
+                RSEG    CODE
+            
+Delay500us      mov.w  #165,R11              
+L1              dec.w   R11                     
+                jnz     L1
+                ret
+            
+Delayhalfsec    mov.w   #1000,R13              
+L2              call    #Delay500us
+                dec.w   R13                     
+                jnz     L2
+                ret
+            
+                ENDMOD
+//=============================================================            
+                END

@@ -1,0 +1,95 @@
+#include  <msp430xG46x.h>
+
+Debounce     MACRO  cycles
+             LOCAL  L
+             mov.w  cycles,R15     
+L            dec.w  R15                     
+             jnz    L
+             ENDM
+;-------------------------------------------------------------------------------
+            ORG     0x1100                  ; Begins a RAM segment
+;-------------------------------------------------------------------------------
+state       DW   3    ;initiel to state 3
+PullUp      EQU  280  ;wait of 0.8msec = (3op*280)/2^20
+PullDown    EQU  70   ;wait of 0.2msec = (3op*70)/2^20
+;-------------------------------------------------------------------------------
+            RSEG    CSTACK                  ; Begins a relocatable segment name of CSTACK - Define stack segment
+;-------------------------------------------------------------------------------
+            RSEG    CODE                    ; Assemble to Flash memory -like void main in C
+;-----------------------------------------------------------------------------
+           NAME    Main
+           PUBLIC  Main,state
+           EXTERN BinCounter,IncLEDtilldone,IncLEDfiveCyc
+
+Main         mov.w   #SFE(CSTACK),SP          ; Initialize stack pointer
+StopWDT      mov.w   #WDTPW+WDTHOLD,&WDTCTL                                            
+SetupPB      bis   #0xffff,&PBDIR            ; P9.0-P9.7 output = #0xff -->M(P9DIR) 
+             clr    &PBOUT
+
+SetupP2      bic.b   #0xff,&P2SEL
+             bic.b   #0xff,&P2DIR
+             bis.b   #0x30,&P2IES
+             bic.b   #0xc0,&P2IES
+             bis.b   #0xf0,&P2IE
+             bic.b   #0xf0,&P2IFG                ; reset of interrupt flag
+                         
+
+;----------- FSM_loop -------------------------------------
+
+state0       cmp     #0,state         ;check if state0 : __bin counter__      
+             jnz     state1
+             call    #BinCounter
+
+state1       cmp     #1,state         ;check if state1 : __leds on from right to left for 5 cycle__ 
+             jnz     state2             
+             call    #IncLEDfiveCyc
+             clr     &PBOUT
+            
+state2       cmp     #2,state         ;check if state2 : __leds on from right to left until all leds are on__ 
+             jnz     state3             
+             call    #IncLEDtilldone
+             clr     &PBOUT             
+             
+state3       cmp     #3,state         ;check if state3 : __sleep mode__
+             jnz     state0
+             clr.b   &P9OUT
+             bis.w   #CPUOFF+GIE,SR                     
+            
+             jmp     state0
+	            
+;------------------------------------------------------------------------------------------ 
+;               PORT1 Interrupt Service Routine  of SW1=P1.0
+;------------------------------------------------------------------------------------------
+PORT2_ISR    Debounce #PullUp   
+             bit.b  #0x10,&P2IFG   ;check if P1.5 is pushed
+             jnz    P1_0 
+             bit.b  #0x20,&P2IFG   ;check if P1.6 is pushed
+             jnz    P1_1
+             bit.b  #0x40,&P2IFG   ;check if P1.7 is pushed
+             jnz    P1_2     
+             bit.b  #0x80,&P2IFG   ;check if P1.8 is pushed
+             jnz    P1_3              
+             reti                  ; interrupt hapened from another source
+             
+P1_0         mov    #0,state       ; rlLED
+             jmp    exitLPM0
+P1_1         mov    #1,state       ; rrLED
+             jmp    exitLPM0        
+P1_2         mov    #2,state       ; rlLED
+             jmp    exitLPM0
+P1_3         mov    #3,state       ; rrLED
+             jmp    exitLPM0    
+             
+exitLPM0     bic    #CPUOFF,0(SP)  ; WAKES THE CPU
+             bic.b  #0xf0,&P2IFG  
+             reti
+                          
+
+;-------------------------------------------------------------------------------------------------------------------------------------------
+            COMMON  INTVEC                  ; Interrupt Vectors-Begins a common segment with name of INTVEC 
+;-------------------------------------------------------------------------------------------------------------------------------------------
+            ORG     PORT2_VECTOR            ;PORT2 Interrupt Vector
+            DW      PORT2_ISR
+            ORG     RESET_VECTOR            ; MSP430 RESET Vector
+            DW      Main                   
+            END
